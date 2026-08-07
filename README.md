@@ -1,2 +1,2 @@
 # VideoPlay
-a video player
+a simple video player
