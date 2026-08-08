@@ -45,6 +45,7 @@
             opacity: 0;
             transition: opacity 0.3s ease;
             backdrop-filter: blur(5px);
+            z-index: 20;
         }
         .video-container:hover .controls,
         .video-container:focus-within .controls {
@@ -112,14 +113,54 @@
             right: 20px;
             border-radius: 8px;
         }
+        .play-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+        }
+        .play-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .play-overlay button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            font-size: 2.5rem;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .play-overlay button:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
     <div class="video-container">
-        <video id="myVideo" class="custom-video" src="video.mp4" poster="poster.webp" autoplay playsinline>
+        <video id="myVideo" class="custom-video" poster="poster.webp" autoplay playsinline>
+            <source src="video.mp4" type="video/mp4">
             <source src="your-video.webm" type="video/webm">
             <p>您的浏览器不支持 HTML5 视频播放</p>
         </video>
+        <div class="play-overlay" id="playOverlay">
+            <button id="overlayPlayBtn">▶</button>
+        </div>
         <div class="controls">
             <button id="playPauseBtn">▶</button>
             <input type="range" id="progressBar" class="progress-bar" value="0" min="0" step="0.01" />
@@ -139,6 +180,10 @@
         const volumeBar = document.getElementById('volumeBar');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const container = document.querySelector('.video-container');
+        const overlay = document.getElementById('playOverlay');
+        const overlayBtn = document.getElementById('overlayPlayBtn');
+
+        let isSeeking = false;
 
         function formatTime(seconds) {
             if (isNaN(seconds) || !isFinite(seconds)) return '00:00';
@@ -149,35 +194,79 @@
 
         function togglePlay() {
             if (video.paused) {
-                video.play();
+                video.play().catch(() => {});
             } else {
                 video.pause();
             }
         }
+
+        function hideOverlay() {
+            overlay.classList.add('hidden');
+        }
+
+        function showOverlay() {
+            overlay.classList.remove('hidden');
+        }
+
+        function requestFullscreen(element) {
+            if (element.requestFullscreen) {
+                return element.requestFullscreen();
+            } else if (element.webkitRequestFullscreen) {
+                return element.webkitRequestFullscreen();
+            } else if (element.msRequestFullscreen) {
+                return element.msRequestFullscreen();
+            } else {
+                alert('当前浏览器不支持全屏');
+                return Promise.reject(new Error('Fullscreen not supported'));
+            }
+        }
+
+        overlay.addEventListener('click', () => {
+            video.play().then(hideOverlay).catch(() => {});
+        });
+        overlayBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            video.play().then(hideOverlay).catch(() => {});
+        });
 
         playPauseBtn.addEventListener('click', togglePlay);
         video.addEventListener('click', togglePlay);
 
         video.addEventListener('play', () => {
             playPauseBtn.textContent = '⏸';
+            hideOverlay();
         });
         video.addEventListener('pause', () => {
             playPauseBtn.textContent = '▶';
         });
 
         video.addEventListener('timeupdate', () => {
-            const progress = (video.currentTime / video.duration) * 100;
-            progressBar.value = progress;
-            currentTimeDisplay.textContent = formatTime(video.currentTime);
+            if (!isSeeking) {
+                const progress = (video.currentTime / video.duration) * 100;
+                progressBar.value = progress;
+                currentTimeDisplay.textContent = formatTime(video.currentTime);
+            }
         });
 
         video.addEventListener('loadedmetadata', () => {
             totalTimeDisplay.textContent = formatTime(video.duration);
         });
 
-        progressBar.addEventListener('input', () => {
+        video.addEventListener('error', (e) => {
+            console.error('视频加载错误:', e);
+            currentTimeDisplay.textContent = '加载失败';
+            totalTimeDisplay.textContent = '--:--';
+        });
+
+        progressBar.addEventListener('pointerdown', () => { isSeeking = true; });
+        progressBar.addEventListener('pointerup', () => {
+            isSeeking = false;
             const seekTime = (progressBar.value / 100) * video.duration;
             video.currentTime = seekTime;
+        });
+        progressBar.addEventListener('input', () => {
+            const seekTime = (progressBar.value / 100) * video.duration;
+            currentTimeDisplay.textContent = formatTime(seekTime);
         });
 
         volumeBar.addEventListener('input', () => {
@@ -185,12 +274,18 @@
         });
 
         fullscreenBtn.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                container.requestFullscreen().catch(err => {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                requestFullscreen(container).catch(err => {
                     alert('无法进入全屏模式：' + err.message);
                 });
             } else {
-                document.exitFullscreen();
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
             }
         });
 
@@ -200,6 +295,14 @@
                 togglePlay();
             }
         });
+
+        if (video.autoplay) {
+            video.play().then(hideOverlay).catch(() => {
+                showOverlay();
+            });
+        } else {
+            showOverlay();
+        }
     </script>
 </body>
 </html>
